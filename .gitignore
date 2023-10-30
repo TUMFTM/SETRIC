@@ -1,0 +1,22 @@
+# 
+venv*
+.vscode
+*.pyc
+*__pycache__*
+*.svg
+*.csv
+*.png
+*.txt
+events.out.tfevents*
+*.pth.tar
+*.pkl
+*.sh
+
+# Data Directory
+debug_results/*
+data/raw/*
+data/processed/*
+
+# Results folder of every Studie
+results**/*
+!results/cr_fusion_08/**

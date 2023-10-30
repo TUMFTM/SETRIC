@@ -1,0 +1,25 @@
+{
+    "model_path": {
+        "l_lstm": "results/cr_fusion_base",
+        "g_lstm": "results/cr_fusion_base",
+        "dg_lstm": "results/cr_fusion_base",
+        "g_sel": "results/cr_fusion_base"
+    },
+    "epochs": 50,
+    "num_workers": 2,
+    "pin_memory": true,
+    "batch_size": 64,
+    "base_lr": 0.005,
+    "gamma": 0.5,
+    "step_size": 20,
+    "clip": true,
+    "sc_img": true,
+    "get_borders": false,
+    "best_val": "sel",
+    "optim": "add",
+    "loss_fn": "nll",
+    "select_invalid": true,
+    "weight": 3.64,
+    "err_quantile": 0.8,
+    "err_rmse": 0.6221
+}
