@@ -12,6 +12,10 @@ events.out.tfevents*
 *.pkl
 *.sh
 
+# add assets
+!assets/**
+!assets/setric.svg
+
 # Data Directory
 debug_results/*
 data/raw/*
