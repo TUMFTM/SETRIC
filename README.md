@@ -4,7 +4,7 @@
 
 # Self-Evaluation of Trajectory Predictors for Autonomous Driving
 
-<img src="assets/setric.svg" alt="Overview of SETRIC" width="9900"/>
+<img src="assets/setric.svg" alt="Overview of SETRIC" width="900"/>
 
 Driving experience and foreseen driving are essential skills for humans to operate vehicles in complex, interactive environments. In the context of autonomous driving, scenario understanding and motion prediction are used to describe the respective skills of the autonomous vehicle. While the latter is investigated extensively with several challenges on large-scale datasets and established methods that deliver promising results, the question of how to empower an autonomous vehicle to gain driving experience has been sparsely investigated yet. The given research focusses on this question: Based on the encoded semantic knowledge of a scenario, an evaluation is conducted to select the motion prediction method that outputs the most accurate prediction. In addition, the evaluation algorithm is trained to classify scenarios with a high expected prediction error. By this, potentially dangerous mis-predictions can be prevented. The results on the comprehensive scenario library CommonRoad reveal a reduction in the euclidean error of 81.0 % and 90.8 % reduction of the miss rate by the evaluation method compared to the benchmark model.
 
@@ -73,13 +73,13 @@ The directory `utils` contains the code to create the data sets and helper files
 `render_cr.py`| Rendering of commonroad-scenarios (png, gif, mp4) to visualize scenarios with the prediction of a trained model
 
 ## Model
-The model used in this research is given in [FusionModel.py](models/Fusion_Model.py). All parameters of its architecture are specified in the [net_config.json](config/net_config.json). The training parameters are given in [train_config.json](config/train_config.json). See the [README](config/README.md) for the explanation of the parameters.
+The model used in this research is given in [FusionModel.py](models/Fusion_Model.py). All parameters of its architecture are specified in the [net_config.json](config/net_config.json). The training parameters are given in [train_config.json](config/train_config.json). See the [README](config/README.md) for the explanation of the parameters. To train a new model, the script [main_fusion.py](setric/main_fusion.py) can be used, note to pass the desired arguments to the script for the training. 
 
 ### Trained models
 The open source repo offers the trained model parameters ([Link](results/cr_fusion_08/cr/g_fusion_g_sel/10/model_parameters_10.pth.tar)) for a threshold of 0.6221 m (80%-percentile of the error of the single predictors). In addition, the base training is given ([Link](results/cr_fusion_base/cr/g_fusion_dg_lstm/10/model_parameters_10.pth.tar)), which was used as input for the optimization of the `08_model`.
 
 ### Model execution
-To execute the model on CommonRoad-scenarios, the file [render_cr.py](utils/render_cr.py) can be used. It creates pictures and videos of the scenarios. The argument `all_pred` visualizes also the non-selected prediction, besides the selected one. The argument `get_pred_samples` runs the model on the scenarios, outputs all prediction and zooms in to the current target model for in-detail analysis.
+For an exemplary usage of the model including visualization on CommonRoad-scenarios, the file [render_cr.py](utils/render_cr.py) can be used. It creates pictures and videos of the scenarios. The argument `all_pred` visualizes also the non-selected prediction, besides the selected one. The argument `get_pred_samples` runs the model on the scenarios, outputs all prediction and zooms in to the current target model for in-detail analysis.
 
 
 ## Qualitative Example
