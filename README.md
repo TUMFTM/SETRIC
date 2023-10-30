@@ -73,10 +73,10 @@ The directory `utils` contains the code to create the data sets and helper files
 `render_cr.py`| Rendering of commonroad-scenarios (png, gif, mp4) to visualize scenarios with the prediction of a trained model
 
 ## Model
-The model used in this research is given in [FusionModel.py](models/Fusion_Model.py). All parameters of its architecture are specified in the [net_config.json](config/net_config.json). The training parameters are given in [train_config.json](config/train_config.json).
+The model used in this research is given in [FusionModel.py](models/Fusion_Model.py). All parameters of its architecture are specified in the [net_config.json](config/net_config.json). The training parameters are given in [train_config.json](config/train_config.json). See the [README](config/README.md) for the explanation of the parameters. 
 
 ### Training
-See the [README](config/README.md) for the explanation of the parameters. To train a new model, the script [main_fusion.py](setric/main_fusion.py) can be used, note to pass the desired arguments to the script for the training. 
+To train a new model, the script [main_fusion.py](setric/main_fusion.py) can be used, note to pass the desired arguments to the script for the training. 
 
 ### Trained models
 The open source repo offers the trained model parameters ([Link](results/cr_fusion_08/cr/g_fusion_g_sel/10/model_parameters_10.pth.tar)) for a threshold of 0.6221 m (80%-percentile of the error of the single predictors). In addition, the base training is given ([Link](results/cr_fusion_base/cr/g_fusion_dg_lstm/10/model_parameters_10.pth.tar)), which was used as input for the optimization of the `08_model`.
