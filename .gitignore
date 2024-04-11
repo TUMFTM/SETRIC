@@ -17,6 +17,9 @@ events.out.tfevents*
 !assets/**
 !assets/setric.svg
 
+# requirements
+!requirements.txt
+
 # Data Directory
 debug_results/*
 data/raw/*

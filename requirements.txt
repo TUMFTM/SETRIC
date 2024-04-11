@@ -1,0 +1,32 @@
+pip==23.2.1
+setuptools==68.1.2
+wheel==0.41.2
+
+black==23.3.0
+commonroad-io==2020.3
+# commonroad-io==2023.2
+geopandas==0.12.2
+joblib==1.1.0
+matplotlib==3.6.3
+names==0.3.0
+numpy==1.22.1
+opencv-python==4.8.0.74
+optuna==2.10.0
+pandas==1.4.0
+pytorch_model_summary==0.1.2
+scipy==1.7.3
+seaborn==0.12.2
+shapely==2.0.1
+torch==2.0.1
+torch_geometric==2.3.1
+torchaudio==2.0.2
+torchvision==0.15.2
+tqdm==4.62.3
+bayesian-optimization==1.4.3
+pygit2==1.13.3
+
+latex==0.7.0
+tensorflow
+tensorboard
+
+# imageio
