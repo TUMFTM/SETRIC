@@ -14,6 +14,7 @@ from shapely.wkt import loads
 import geopandas as gpd
 
 from utils.geometry import abs_to_rel_coord
+from utils.scheduling import permute_input
 
 
 def generate_self_rendered_sc_img(
@@ -223,9 +224,11 @@ def get_rdp_map_by_shp(rdb, data_path):
     trafficlanes = {
         str(shp_tl.identifier[tl_idx]): {
             "geometry": np.array(shp_tl.geometry[tl_idx].coords.xy).T,
-            "successors": shp_tl.successors[tl_idx].split(",")
-            if isinstance(shp_tl.successors[tl_idx], str)
-            else [],
+            "successors": (
+                shp_tl.successors[tl_idx].split(",")
+                if isinstance(shp_tl.successors[tl_idx], str)
+                else []
+            ),
             "type": shp_tl.type[tl_idx],
         }
         for tl_idx in shp_tl.index
@@ -423,13 +426,7 @@ if __name__ == "__main__":
 
     for data_loader, mod in iter_list:
         for batch in tqdm(data_loader):
-            batch.x = batch.x.permute(0, 2, 1)
-            batch.y = batch.y.permute(0, 2, 1)
-            # Add object class to the time series data
-            obj_class = batch.obj_class.repeat(
-                1, batch.x.shape[1], 1
-            )  # obj_class shape: (N, seq_length, 1)
-            batch.x = torch.cat((batch.x, obj_class), dim=2)
+            permute_input(data_batch=data_loader)
 
             postfix = get_postfix(cfg_train)
 

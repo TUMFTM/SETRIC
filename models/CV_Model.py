@@ -16,7 +16,7 @@ class CV_Model(CustomModel):
         output_length=30,
         output_features=2,
         hist_steps=3,
-        device="cuda" if torch.cuda.is_available() else "cpu",
+        device="cuda:0" if torch.cuda.is_available() else "cpu",
     ):
         """
         Module description:

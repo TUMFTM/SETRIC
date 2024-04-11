@@ -4,6 +4,7 @@ venv*
 *.pyc
 *__pycache__*
 *.svg
+*.pdf
 *.csv
 *.png
 *.txt

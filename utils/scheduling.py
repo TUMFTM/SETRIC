@@ -1,5 +1,6 @@
 import os
 import sys
+import copy
 import datetime
 import json
 
@@ -12,22 +13,30 @@ import numpy as np
 
 
 def store_current_config(
-    base_path, cfg_train, net_config, args, n_iter=0, add_best_str=None
+    cfg_train,
+    net_config,
+    add_best_str=None,
+    force_cfg=False,
 ):
-    if n_iter > 0:
-        return
     if add_best_str is None:
         strstr = ""
     else:
         strstr = add_best_str
-    with open(
-        os.path.join(base_path, strstr + os.path.basename(args.config)), "w"
-    ) as f:
-        json.dump(cfg_train, f, indent=4)
-    with open(
-        os.path.join(base_path, strstr + os.path.basename(args.net_config)), "w"
-    ) as f:
-        json.dump(net_config, f, indent=4)
+
+    cfg_train_str_path = os.path.join(
+        cfg_train["path"], strstr + os.path.basename(cfg_train["config"])
+    )
+    net_config_str_path = os.path.join(
+        cfg_train["path"], strstr + os.path.basename(cfg_train["net_config"])
+    )
+
+    if force_cfg or not os.path.exists(cfg_train_str_path):
+        with open(cfg_train_str_path, "w") as f:
+            json.dump(cfg_train, f, indent=4)
+
+    if force_cfg or not os.path.exists(net_config_str_path):
+        with open(net_config_str_path, "w") as f:
+            json.dump(net_config, f, indent=4)
 
 
 def adapt_to_CR(net_config, cfg_train, split_list):
@@ -40,36 +49,85 @@ def adapt_to_CR(net_config, cfg_train, split_list):
     net_config["output_length"] = 50
     net_config["input_features"] = 4
     net_config["dt_step_s"] = 0.1
+
     return net_config, ["cr"]
 
 
 def adjust_batch_size(cfg):
+    if cfg["device"] == "cpu":
+        return
     hostname = os.uname()[1]
-    if hostname == "gpu-vm" and cfg["device"] != "cpu":
-        return min(16, cfg["batch_size"])
+    if hostname == "gpu-vm":
+        cfg.update({"batch_size": min(16, cfg["batch_size"])})
+    else:
+        cfg.update({"batch_size": 64})
 
-    return cfg["batch_size"]
+
+def adjust_lr_rate(cfg, n_fill=80):
+    if cfg["load_model"]:
+        base_lr = 0.005
+        gamma = 0.5
+    else:
+        base_lr = 0.001
+        gamma = 0.1
+
+    cfg.update({"base_lr": base_lr, "gamma": gamma})
+
+    print(n_fill * "#")
+    print(" UPDATE CONFIG (LR, GAMMA) ".center(n_fill, "#"))
+    for key in ["base_lr", "gamma"]:
+        print("\t\tKEY: {}\t\tVAL: {}   ".format(key, cfg[key]))
+    print(n_fill * "#")
+    print(n_fill * "#")
 
 
-def get_config(args, results_dir_path, is_fusion=False):
+def get_config(args, results_dir_path, is_fusion=False, no_cfg_overwrite=False):
     # Init config
     # get name of net
     is_bayesian = args.__dict__.get("bayesian", False)
-    if is_bayesian:
+    if is_bayesian or args.__dict__.get("ablation", False):
         net_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     else:
         net_name = get_random_name()  # get name before seeding
 
     cfg = {
         "net_name": net_name,
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "cuda:0" if torch.cuda.is_available() else "cpu",
     }
 
     # add args
     cfg.update(args.__dict__)
 
+    # Init results path
+    if cfg["debug"] and "debug" not in results_dir_path:
+        results_dir_path = os.path.join(
+            os.path.dirname(results_dir_path),
+            os.path.basename(results_dir_path) + "_debug",
+        )
+    if is_bayesian:
+        if "bayesian" not in results_dir_path:
+            results_dir_path = results_dir_path.replace("results", "results_bayesian")
+        results_dir_path = os.path.join(results_dir_path, args.time_stamp_str)
+    if not os.path.exists(results_dir_path):
+        os.mkdir(results_dir_path)
+
+    strstr = ""
+    if "open" not in cfg.get("data", "cr"):
+        strstr += "cr_"
+    if is_fusion:
+        strstr += "fusion_"
+
+    base_path = os.path.join(results_dir_path, strstr + cfg["net_name"])
+
+    cfg["path"] = base_path
+    if os.path.exists(base_path):
+        raise ValueError("Path already exists: '{}'".format(base_path))
+
+    if no_cfg_overwrite:
+        return cfg
+
     # load train config
-    with open(os.path.join(repo_path, args.config), "r") as f:
+    with open(os.path.join(repo_path, cfg["config"]), "r") as f:
         cfg_json = json.load(f)
     cfg.update(cfg_json)
 
@@ -85,31 +143,10 @@ def get_config(args, results_dir_path, is_fusion=False):
         with open(os.path.join(repo_path, args.net_config), "r") as f:
             net_config = json.load(f)
 
-    cfg["batch_size"] = adjust_batch_size(cfg)
+    _ = adjust_batch_size(cfg)
+    _ = adjust_lr_rate(cfg)
 
-    # Init results path
-    if cfg["debug"]:
-        results_dir_path = os.path.join(
-            os.path.dirname(results_dir_path), "results_debug"
-        )
-    if is_bayesian:
-        results_dir_path = results_dir_path.replace("results", "results_bayesian")
-        results_dir_path = os.path.join(results_dir_path, args.time_stamp_str)
-    if not os.path.exists(results_dir_path):
-        os.mkdir(results_dir_path)
-
-    strstr = ""
-    if not "open" in cfg["data"]:
-        strstr += "cr_"
-    if is_fusion:
-        strstr += "fusion_"
-
-    base_path = os.path.join(results_dir_path, strstr + cfg["net_name"])
-    cfg["path"] = base_path
-    if os.path.exists(base_path):
-        raise ValueError("Path already exists: '{}'".format(base_path))
-
-    return net_config, cfg, base_path
+    return net_config, cfg
 
 
 def get_random_name():
@@ -123,9 +160,17 @@ def get_model_tag_list(cfg):
         cfg["model_tag_list"] = ["cv", "l_lstm", "dg_lstm"]
     elif cfg["model_list"] == 2:
         cfg["model_tag_list"] = ["cv", "l_lstm"]
+    elif cfg["model_list"] == 3:
+        cfg["model_tag_list"] = ["cv", "dg_lstm"]
+    elif cfg["model_list"] == 4:
+        cfg["model_tag_list"] = ["l_lstm"]
+    elif cfg["model_list"] == 5:
+        cfg["model_tag_list"] = ["dg_lstm"]
+    elif cfg["model_list"] == 6:
+        cfg["model_tag_list"] = ["cv"]
     else:
         raise ValueError(
-            "invalid choise of 'args.model_list' = {}".format(cfg["model_tag_list"])
+            "invalid choice of 'args.model_list' = {}".format(cfg["model_list"])
         )
 
 
@@ -143,13 +188,13 @@ def modify_for_debug(cfg_train):
         return
 
     if cfg_train.get("bayesian", False):
-        n_epochs = 120
+        n_epochs = 2
     else:
-        n_epochs = 200
+        n_epochs = 1
 
     update_dict = {
         "epochs": n_epochs,
-        "step_size": 300,
+        "step_size": n_epochs,
         # "num_workers": 1,
         # "pin_memory": False,
         # "device": "cpu"
@@ -158,8 +203,8 @@ def modify_for_debug(cfg_train):
     cfg_train.update(update_dict)
 
 
-def get_log_root_path(base_path, split, tag):
-    log_root_path = os.path.join(base_path, split, tag)
+def get_log_root_path(cfg_train, tag):
+    log_root_path = os.path.join(cfg_train["path"], cfg_train["split"], tag)
     if not os.path.exists(log_root_path):
         os.makedirs(log_root_path)
     return log_root_path
@@ -169,30 +214,32 @@ def update_model_path(cfg):
     cfg["model_path"] = {key: cfg["path"] for key in cfg["model_path"].keys()}
 
 
-def load_net_params(model, cfg):
-    iterator = model.model_tag_list + ["g_sel"]
-
+def load_net_params(model, cfg, model_load_path=None):
     if not cfg["load_model"]:
+        iterator = copy.deepcopy(model.model_tag_list)
+        if not cfg.get("no_g_sel", False):
+            iterator += ["g_sel"]
         _ = update_model_path(cfg)
         return iterator
 
-    last_model_tag = cfg["model_tag_list"][-1]
-    last_model_path = cfg["model_path"][last_model_tag]
+    if model_load_path is None:
+        last_model_tag = cfg["model_tag_list"][-1]
+        last_model_path = cfg["model_path"][last_model_tag]
 
-    if not last_model_path:
-        raise ValueError("No model path given for '{}'".format(last_model_tag))
+        if not last_model_path:
+            raise ValueError("No model path given for '{}'".format(last_model_tag))
 
-    if not os.path.exists(last_model_path):
-        raise ValueError("No model found at '{}'".format(last_model_path))
+        if not os.path.exists(last_model_path):
+            raise ValueError("No model found at '{}'".format(last_model_path))
+        model.update_model_tag(model_tag=last_model_tag)
+        model_load_path = os.path.join(
+            last_model_path,
+            cfg["split"],
+            model.tag,
+            str(cfg["seed"]),
+            "model_parameters_{}.pth.tar".format(cfg["seed"]),
+        )
 
-    model.update_model_tag(n_iter=0, model_tag=last_model_tag)
-    model_load_path = os.path.join(
-        last_model_path,
-        cfg["split"],
-        model.tag,
-        str(cfg["seed"]),
-        "model_parameters_{}.pth.tar".format(cfg["seed"]),
-    )
     checkpoint = torch.load(model_load_path, map_location=cfg["device"])
     model_stat_dict = checkpoint["model_state_dict"]
     model.load_state_dict(model_stat_dict)
@@ -202,18 +249,20 @@ def load_net_params(model, cfg):
     model.sc_img_trained = True
 
     iterator = ["g_sel"]
-
     return iterator
 
 
 def print_quantiles(rmse_over_sample, log_string=None):
-    strstr = "rmse_over_samples quantiles: 0.8-error: {:.04f} m | 0.85-error: {:.04f} m | 0.9-error: {:.04f} m | 0.95-error: {:.04f} m | 1.0-error: {:.04f} m".format(
-        np.quantile(rmse_over_sample, q=0.8),
-        np.quantile(rmse_over_sample, q=0.85),
-        np.quantile(rmse_over_sample, q=0.9),
-        np.quantile(rmse_over_sample, q=0.95),
-        np.quantile(rmse_over_sample, q=1.0),
-    )
+    if rmse_over_sample:
+        strstr = "rmse_over_samples quantiles: 0.8-error: {:.04f} m | 0.85-error: {:.04f} m | 0.9-error: {:.04f} m | 0.95-error: {:.04f} m | 1.0-error: {:.04f} m".format(
+            np.quantile(rmse_over_sample, q=0.8),
+            np.quantile(rmse_over_sample, q=0.85),
+            np.quantile(rmse_over_sample, q=0.9),
+            np.quantile(rmse_over_sample, q=0.95),
+            np.quantile(rmse_over_sample, q=1.0),
+        )
+    else:
+        strstr = "rmse_over_samples quantiles: - "
     if log_string is None:
         print(strstr)
     else:
@@ -251,14 +300,32 @@ def print_overview(
     print(strstr, end=end_str)
 
 
+def repermute_input(
+    data_batch,
+):
+    x_features = data_batch.x.shape[-1] - 1
+    data_batch.x = data_batch.x.permute(0, 2, 1)[:, :x_features, :]
+    data_batch.y = data_batch.y.permute(0, 2, 1)
+
+
+def permute_input(data_batch):
+    # data_batch x and y are of shape [Node number, Node feature number, Series length]
+    # which has to be converted to [Node number, Series length, Node feature number]
+    data_batch.x = data_batch.x.permute(0, 2, 1)
+    data_batch.y = data_batch.y.permute(0, 2, 1)
+
+    # Add object class to the time series data - obj_class shape: (N, seq_length, 1)
+    obj_class = data_batch.obj_class.repeat(1, data_batch.x.shape[1], 1)
+    data_batch.x = torch.cat((data_batch.x, obj_class), dim=2)
+
+
 def print_datastats(dataloader, split_type):
     n_zeros = 0
     n_total = 0
 
+    # Non-permute batch expected !!
     for batch in dataloader:
-        batch.x = batch.x.permute(0, 2, 1)
-        batch.y = batch.y.permute(0, 2, 1)
-        n_zeros += sum(torch.sum(torch.sum(batch.x[:, :, :2], dim=1), dim=1) == 0)
+        n_zeros += sum(torch.sum(torch.sum(batch.x[:, :2, :], dim=2), dim=1) == 0)
         n_total += batch.x.shape[0]
 
     print(

@@ -11,8 +11,15 @@ from tqdm import tqdm
 from datetime import datetime
 import torch
 
+from utils.scheduling import permute_input
 
-def label_to_int(label):
+
+class Namespace:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+def label_to_int_open_dd(label):
     """This function convert the label to a label specific integer. The function can be used with the OpenDD Dataset
     or any other Dataset which has an equivalent stack of possible labels that is equally spelled!
     """
@@ -43,6 +50,47 @@ def label_to_int(label):
             "'Medium Vehicle', 'Truck', 'Bus', 'Trailer', 'Heavy Vehicle' - got: "
             + label
         )
+
+
+def cr_labels(label, get_len=False, get_label_str=False):
+    """This function convert the label to a label specific integer. The function can be used with the CR Dataset
+    or any other Dataset which has an equivalent stack of possible labels that is equally spelled!
+    """
+    base_dict = {
+        0: "UNKNOWN",
+        1: "CAR",
+        2: "TRUCK",
+        3: "BUS",
+        4: "BICYCLE",
+        5: "PEDESTRIAN",
+        6: "PRIORITY_VEHICLE",
+        7: "PARKED_VEHICLE",
+        8: "CONSTRUCTION_ZONE",
+        9: "TRAIN",
+        10: "ROAD_BOUNDARY",
+        11: "MOTORCYCLE",
+        12: "TAXI",
+        13: "BUILDING",
+        14: "PILLAR",
+        15: "MEDIAN_STRIP",
+    }
+
+    if get_len:
+        return len(base_dict)
+
+    if get_label_str:
+        return list(base_dict.values())
+
+    if isinstance(label, str):
+        swapped_dict = {value: key for key, value in base_dict.items()}
+        return swapped_dict[label.upper()]
+
+    if isinstance(label, int):
+        return base_dict[label]
+
+    raise TypeError(
+        'Invalid label type: {}, "str" or "int" required'.format(type(label))
+    )
 
 
 def int_to_label(label_specific_integer):
@@ -155,7 +203,7 @@ def get_debug_data(data="cr"):
 
     cfg_train["model_list"] = 1
     cfg_train["data"] = data
-    cfg_train["device"] = "cuda"
+    cfg_train["device"] = "cuda:0"
     _ = get_model_tag_list(cfg_train)
 
     with open(os.path.join(repo_path, "config/net_config.json"), "r") as f:
@@ -165,26 +213,21 @@ def get_debug_data(data="cr"):
 
     # get Data #
     if "open" in data:
-        train_dataset = Dataset_OpenDD(
-            split=cfg_train["split"], split_type="train", debug=True
-        )
+        train_dataset_cl = Dataset_OpenDD
     else:
-        train_dataset = Dataset_CR(
-            split=cfg_train["split"], split_type="train", debug=True
-        )
+        train_dataset_cl = Dataset_CR
+
+    train_dataset = train_dataset_cl(
+        split=cfg_train["split"],
+        split_type="train",
+        debug=True,
+    )
 
     train_dataloader = DataLoader(
         train_dataset, batch_size=cfg_train["batch_size"], shuffle=False
     )
     batch = next(iter(train_dataloader))
-    batch.x = batch.x.permute(0, 2, 1)
-    batch.y = batch.y.permute(0, 2, 1)
-
-    # Add object class to the time series data
-    obj_class = batch.obj_class.repeat(
-        1, batch.x.shape[1], 1
-    )  # obj_class shape: (N, seq_length, 1)
-    batch.x = torch.cat((batch.x, obj_class), dim=2)
+    permute_input(data_batch=batch)
 
     valid_rdbs = [1, 2, 3, 4, 5, 6, 7]
     if cfg_train["sc_img"] and "open" in data:

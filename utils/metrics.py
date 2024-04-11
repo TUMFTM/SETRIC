@@ -1,6 +1,18 @@
 import torch
 
 
+def get_mis_pred_over_samples(model_mse, mr_threshold=2.0, horz_len=50):
+    """
+    Determine misprediction
+    A misprediction is defined by a Euclidean error above 2.0m along trajectroy.
+    """
+    bool_mis_predictions, _ = torch.max(
+        torch.pow(torch.sum(model_mse[:, :horz_len, :], dim=-1), 0.5) > mr_threshold,
+        dim=-1,
+    )
+    return bool_mis_predictions
+
+
 def get_mse_over_horizon(model_mse):
     return model_mse.sum(2).sum(0)
 

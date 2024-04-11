@@ -12,7 +12,7 @@ from torch_geometric.data import Data
 repo_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(repo_path)
 
-from utils.processing import label_to_int, get_edge_index
+from utils.processing import label_to_int_open_dd, get_edge_index
 from utils.geometry import coord_to_coord
 
 
@@ -337,7 +337,7 @@ class Dataset_OpenDD(InMemoryDataset):
                             x_class_list.append(
                                 torch.tensor(
                                     [
-                                        label_to_int(
+                                        label_to_int_open_dd(
                                             df_scene_t_h_objid["CLASS"].values[0]
                                         )
                                     ],

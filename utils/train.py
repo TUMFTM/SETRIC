@@ -17,7 +17,12 @@ sys.path.append(repo_path)
 from utils.Dataset_OpenDD import Dataset_OpenDD
 from utils.Dataset_CR import Dataset_CR
 from utils.map_processing import get_rdp_map, get_sc_img_batch
-from utils.scheduling import print_overview, print_datastats, print_quantiles
+from utils.scheduling import (
+    print_overview,
+    print_datastats,
+    print_quantiles,
+    permute_input,
+)
 from utils.metrics import get_mse_over_horizon, get_rmse_over_samples
 
 
@@ -73,6 +78,8 @@ def create_log_path(log_root_path, run_tag, printer, model, device, cfg):
     """ Save Model parameter inputs as dict """
     input_arg_dict = {}
     for key, val in model.__dict__.items():
+        if key in ["model_fns", "best_model_params"] or key[0] == "_":
+            continue
         input_arg_dict[key] = val
 
     seed = cfg.get("seed", 42)
@@ -117,7 +124,8 @@ def create_log_path(log_root_path, run_tag, printer, model, device, cfg):
 
     """Write log header"""
     log_string(
-        "################################\tLog File - Single Training with Validation\t################################"
+        "\n\n"
+        + "\tLog File - Single Training with Validation\t".center(80, "#")
         + "\n\n"
         + "Date:\t"
         + datetime.datetime.now().strftime("%Y-%m-%d")
@@ -155,43 +163,57 @@ def create_log_path(log_root_path, run_tag, printer, model, device, cfg):
     )
 
 
-def get_data(cfg, log_string, debug=False):
+def get_data(cfg, log_string, debug=False, train_dataloader=None):
     """Create dataloader for training and validation data"""
-    log_string(
-        "\n----------------------------------------------------------------------------------------------------"
-    )
-    log_string("Creating Training Dataloader (data = {})...".format(cfg["data"]))
-    time_train_dataloader_start = datetime.datetime.now()
-
+    # choose dataset
     if "open" in cfg["data"]:
         dataset = Dataset_OpenDD
     else:
         dataset = Dataset_CR
 
-    train_dataset = dataset(split=cfg["split"], split_type="train", debug=debug)
+    # check for debug
     if debug:
         is_shuffle = False
     else:
         is_shuffle = True
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=cfg["batch_size"],
-        shuffle=is_shuffle,
-        num_workers=cfg["num_workers"],
-        pin_memory=cfg["pin_memory"],
-    )
 
-    log_string(
-        "Completed after (Hours:Minutes:Seconds:Microseconds): "
-        + str(datetime.datetime.now() - time_train_dataloader_start)
-        + "\n"
-    )
+    processed_file_folder = None
 
+    # Training Dataloader
+    log_string("\n" + "-" * 100)
+    if train_dataloader is None:
+        log_string("Creating Training Dataloader (data = {})...".format(cfg["data"]))
+        time_train_dataloader_start = datetime.datetime.now()
+        train_dataset = dataset(
+            split=cfg["split"],
+            split_type="train",
+            debug=debug,
+        )
+        processed_file_folder = train_dataset.processed_file_folder
+        train_dataloader = DataLoader(
+            train_dataset,
+            batch_size=cfg["batch_size"],
+            shuffle=is_shuffle,
+            num_workers=cfg["num_workers"],
+            pin_memory=cfg["pin_memory"],
+        )
+        log_string(
+            "Completed after (Hours:Minutes:Seconds:Microseconds): "
+            + str(datetime.datetime.now() - time_train_dataloader_start)
+            + "\n"
+        )
+        train_str = "train"
+
+    # Validation Dataloader
     log_string("Creating Validation Dataloader ...")
     time_val_dataloader_start = datetime.datetime.now()
     if debug:
-        val_dataset = train_dataset
-        # val_dataset = val_dataset[:1]
+        # use train data set for debug
+        val_dataset = dataset(
+            split=cfg["split"],
+            split_type="train",
+            debug=debug,
+        )
     else:
         val_dataset = dataset(split=cfg["split"], split_type="val")
     val_dataloader = DataLoader(
@@ -201,14 +223,13 @@ def get_data(cfg, log_string, debug=False):
         num_workers=cfg["num_workers"],
         pin_memory=cfg["pin_memory"],
     )
-
     log_string(
         "Completed after (Hours:Minutes:Seconds:Microseconds): "
         + str(datetime.datetime.now() - time_val_dataloader_start)
         + "\n"
     )
 
-    """get map dict"""
+    # get map dict
     if cfg["sc_img"] and "open" in cfg["data"]:
         valid_rdbs = [1, 2, 3, 4, 5, 6, 7]
         rdp_map_dict = {
@@ -218,11 +239,14 @@ def get_data(cfg, log_string, debug=False):
     else:
         rdp_map_dict = None
 
+    print_datastats(train_dataloader, train_str)
+    print_datastats(val_dataloader, "val")
+
     return (
         train_dataloader,
         val_dataloader,
         rdp_map_dict,
-        train_dataset.processed_file_folder,
+        processed_file_folder,
     )
 
 
@@ -258,11 +282,11 @@ def fn_save_model(
     epoch,
     train_time,
     input_arg_dict,
+    model_save_path,
+    best_val_loss,
     train_sample,
 ):
-    log_string(
-        "\n----------------------------------------------------------------------------------------------------"
-    )
+    log_string("\n" + "-" * 100)
     if save_results:
         model_data = get_model_data(train_sample, cfg, device)
 
@@ -288,7 +312,11 @@ def fn_save_model(
             }
         else:
             log_string(
-                "Saving model state after Epoch " + str(checkpoint["epoch"]) + " ..."
+                "Saving model state after Epoch "
+                + str(checkpoint["epoch"])
+                + " ... (best_val_loss: {:.02f}, path: {})".format(
+                    best_val_loss, model_save_path
+                )
             )
 
 
@@ -498,6 +526,7 @@ def train(
     tensorboard=True,
     printer=True,
     save_model="best",
+    train_dataloader=None,
 ):
     """
     Input
@@ -538,15 +567,13 @@ def train(
 
     """Cast seed"""
     torch.manual_seed(seed)
-    if device == "cuda":
+    if device != "cpu":
         torch.cuda.manual_seed(seed)
 
     """Get Data"""
     train_dataloader, val_dataloader, rdp_map_dict, processed_file_folder = get_data(
-        cfg, log_string, debug=cfg["debug"]
+        cfg, log_string, debug=cfg["debug"], train_dataloader=train_dataloader
     )
-    print_datastats(train_dataloader, "train")
-    print_datastats(val_dataloader, "val")
 
     # send model to device and set it in training mode
     if "g_fusion" in model.tag:
@@ -576,7 +603,8 @@ def train(
             log_string("\n---- EPOCH %03d TRAINING ----" % epoch)
             sc_img_mod = "train"
         log_string(str(epoch_time_start))
-        if not is_val and not "cv" in model.tag:
+
+        if not is_val and "cv" not in model.tag:
             log_string("Learning rate: " + str(scheduler.get_last_lr()[0]))
 
         # initialize losses
@@ -584,8 +612,8 @@ def train(
             mse_over_horizon = torch.zeros(model.output_length)
             opt_mse_over_horizon = torch.zeros(model.output_length)
         else:
-            mse_over_horizon = torch.zeros(model.output_length, device="cuda")
-            opt_mse_over_horizon = torch.zeros(model.output_length, device="cuda")
+            mse_over_horizon = torch.zeros(model.output_length, device="cuda:0")
+            opt_mse_over_horizon = torch.zeros(model.output_length, device="cuda:0")
 
         rmse_over_samples = []
 
@@ -596,14 +624,7 @@ def train(
         num_samples = 0
 
         for iter_batch in tqdm(iter_dataloader, desc="Epoch " + str(epoch)):
-            # iter_batch y and y are of shape [Node number, Node feature number, Series length] which has to be
-            # converted to [Node number, Series length, Node feature number]
-            iter_batch.x = iter_batch.x.permute(0, 2, 1)
-            iter_batch.y = iter_batch.y.permute(0, 2, 1)
-
-            # Add object class to the time series data - obj_class shape: (N, seq_length, 1)
-            obj_class = iter_batch.obj_class.repeat(1, iter_batch.x.shape[1], 1)
-            iter_batch.x = torch.cat((iter_batch.x, obj_class), dim=2)
+            permute_input(data_batch=iter_batch)
 
             # Get sc images
             if cfg["sc_img"] and "open" in cfg["data"]:
@@ -626,6 +647,8 @@ def train(
                 pred = model(iter_batch)
 
             # Compute loss
+            loss_output = model.loss(pred, iter_batch.y[:, :, :2])
+
             if "g_fusion" in model.tag:
                 (
                     iter_loss_batch,
@@ -633,12 +656,12 @@ def train(
                     selections,
                     opt_model_mse,
                     opt_selections,
-                ) = model.loss(pred, iter_batch.y[:, :, :2])
+                ) = loss_output
                 valid_selection_list = selections < len(model.model_tag_list)
                 num_selections_valid += int(sum(valid_selection_list))
                 num_correct_selections += torch.sum(selections == opt_selections)
             else:
-                iter_loss_batch = model.loss(pred, iter_batch.y[:, :, :2])
+                iter_loss_batch = loss_output
                 sel_model_mse = torch.pow(pred - iter_batch.y[:, :, :2], 2.0)
                 selections = torch.zeros(
                     [iter_batch.y.shape[0]], dtype=int, device=device
@@ -648,13 +671,15 @@ def train(
                 num_selections_valid += len(selections)
                 num_correct_selections += len(selections)
 
-            if not is_val and not "cv" in model.tag:
+            if not is_val and "cv" not in model.tag:
                 # backpropagation
                 iter_loss_batch.backward()
 
                 # Gradient Clipping
                 if cfg["clip"]:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), cfg.get("clip_grad", 10)
+                    )
 
                 # optimization step
                 optimizer.step()
@@ -672,26 +697,32 @@ def train(
 
         if num_selections_valid == 0:
             log_string("\n############ All selections invalid ############\n")
+            rmse_over_horizon = torch.tensor(-1).cpu().detach().numpy()
+            opt_rmse_over_horizon = torch.tensor(-1).cpu().detach().numpy()
+        else:
+            # get rmse values
+            rmse_over_horizon = (
+                torch.pow(mse_over_horizon / num_selections_valid, 0.5)
+                .cpu()
+                .detach()
+                .numpy()
+            )
+            opt_rmse_over_horizon = (
+                torch.pow(opt_mse_over_horizon / num_selections_valid, 0.5)
+                .cpu()
+                .detach()
+                .numpy()
+            )
 
-        # get rmse values
-        rmse_over_horizon = (
-            torch.pow(mse_over_horizon / num_selections_valid, 0.5)
-            .cpu()
-            .detach()
-            .numpy()
-        )
-        opt_rmse_over_horizon = (
-            torch.pow(opt_mse_over_horizon / num_selections_valid, 0.5)
-            .cpu()
-            .detach()
-            .numpy()
-        )
+        if num_samples == 0:
+            iter_loss_sum = 999.9
+            num_correct_selections = 0
+        else:
+            # Overall model loss
+            iter_loss_sum /= num_samples
 
-        # Overall model loss
-        iter_loss_sum /= num_samples
-
-        # Overall correct selections
-        num_correct_selections /= num_samples
+            # Overall correct selections
+            num_correct_selections /= num_samples
 
         # print epoch summary
         _ = log_epoch(
@@ -717,9 +748,7 @@ def train(
         )
 
     # Logging
-    log_string(
-        "\n----------------------------------------------------------------------------------------------------"
-    )
+    log_string("\n" + "-" * 100)
     time_start = datetime.datetime.now()
     log_string("\n**** start time: " + str(time_start) + " ****")
     best_val_loss = 100000.0
@@ -802,14 +831,21 @@ def train(
             )
 
         # learning rate decay step
-        if not "cv" in model.tag:
+        if "cv" not in model.tag:
             scheduler.step()
 
         train_time = datetime.datetime.now() - time_start
         log_string("\nelapsed time: " + str(train_time))
 
+        """Abort Training"""
         if "cv" in model.tag:
             break
+        if train_mean_rmse_over_horizon < 0.0:
+            break
+
+    # save last learning rate
+    if scheduler is not None:
+        model.last_lr[model.current_model] = scheduler.get_last_lr()[0]
 
     log_string("\n**** end time: " + str(datetime.datetime.now()) + " ****")
 
@@ -827,6 +863,8 @@ def train(
         epoch,
         train_time,
         input_arg_dict,
+        model_save_path,
+        best_val_loss,
         train_sample=next(iter(train_dataloader)),
     )
 

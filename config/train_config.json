@@ -9,8 +9,8 @@
     "num_workers": 2,
     "pin_memory": true,
     "batch_size": 64,
-    "base_lr": 0.005,
-    "gamma": 0.5,
+    "base_lr": 0.001,
+    "gamma": 0.1,
     "step_size": 20,
     "clip": true,
     "sc_img": true,
@@ -18,8 +18,8 @@
     "best_val": "sel",
     "optim": "add",
     "loss_fn": "nll",
-    "select_invalid": true,
     "weight": 3.64,
+    "invalid_def": "rmse",
     "err_quantile": 0.8,
     "err_rmse": 0.6221
 }
