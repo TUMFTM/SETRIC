@@ -37,16 +37,16 @@ epochs | int | 50 | Number of training epochs |
 num_workers | int | 2 | Number of data loaders |
 pin_memory | bool | true | Argument to pin memory for data loaders |
 batch_size | int | 64 | Batch size for data loaders |
-base_lr | float | 0.0005 | Base learning rate of training |
-gamma | float | 0.5 | Decay factor for learning rate scheduler |
-step_size | float | 0.0005 | Step size for learning rate scheduler |
+base_lr | float | 0.0005 | Base learning rate of training, set to 0.001 if training from scratch |
+gamma | float | 0.5 | Decay factor for learning rate scheduler, set to 0.1 if training from scratch |
+step_size | float | 20 | Step size for learning rate scheduler |
 clip | bool | true | Argument for gradient clipping during training |
 sc_img | bool | true | Argument to consider scene image encoding |
 get_borders | bool | true | Argument to extract lane borders instead of center lanes from scene image |
 best_val | str | "sel" | Selection of metric to choose the best model ('sel' or 'rmse'). "sel" select the best selection rate. |
 optim | str | "add" | Optimizer selection ('add' = ADAMS, 'sgd' = SGD) |
 loss_fn | str | "nll" | Loss function of selector ('nll' = NLLLoss, 'ce' = CrossEntropyLoss) |
-select_invalid | bool | true | Argument to select also invalid scenarios |
 weight | float | 3.64 | Weight of invalid choice during selection training |
-err_quantile | float | 0.8 | Relative Threshold to classify a scenario as invalid, RMSE ratio of batch, only taken if 'err_rmse' < 0 |
-err_rmse | float | 0.6221 | Absolute Threshold to classify a scenario as invalid, RMSE in meter |
+invalid_def | str | "rmse" | Select metric to define invalid, either "rmse" or "missrate" |
+err_quantile | float | 0.8 | Relative threshold to classify a scenario as invalid, RMSE ratio of batch, only taken if 'err_rmse' < 0 |
+err_rmse | float | 0.6221 | Absolute threshold to classify a scenario as invalid, RMSE in meter |

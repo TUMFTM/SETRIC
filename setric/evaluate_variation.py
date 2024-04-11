@@ -1,11 +1,19 @@
+"""Evaluation variation of error threshold."""
+
 import os
 import sys
+import argparse
+import pickle
+
+import numpy as np
+import matplotlib.pyplot as plt
 
 repo_path = os.path.dirname(os.path.dirname(__file__))
 sys.path.append(repo_path)
 
-import pickle
-import matplotlib.pyplot as plt
+from setric.evaluate_fusion import eval_main
+from utils.visualization import update_matplotlib
+from utils.processing import Namespace
 
 TUM_BLUE = (0 / 255, 101 / 255, 189 / 255)
 TUM_LIGHT_BLUE = (100 / 255, 160 / 255, 200 / 255)
@@ -22,19 +30,13 @@ COLOR_LIST_RED = [GRAY, TUM_ORAN, TUM_GREEN, TUM_BLUE]
 
 COLUMNWIDTH = 3.5
 PAGEWIDTH = COLUMNWIDTH * 2.0
-FONTSIZE = 8  # IEEE is 8
-
-FIGSIZE = (COLUMNWIDTH, 9 / 16 * COLUMNWIDTH)
-
-import numpy as np
-import argparse
-from setric.evaluate_fusion import eval_main, update_matplotlib
+FONTSIZE = 7  # IEEE is 8
+FIGSIZE = (16, 9)
 
 
 def save_plt(base_path, plt_key, ax, with_legend=True):
-    """Saves plot to save_path."""
-
-    update_matplotlib()
+    """Save plot to save_path."""
+    update_matplotlib(fontsize=FONTSIZE)
 
     # save wo legend
     save_path = os.path.join(base_path, plt_key + ".svg")
@@ -59,7 +61,7 @@ def plot_rmse_distributions(
     n_bin=21,
     is_logbins=True,
 ):
-    "Evaluates distribution of RMSE error over samples."
+    """Evaluate distribution of RMSE error over samples."""
     strstr = ""
     for j, (items, model_tag) in enumerate(input_tuples):
         dist_values = items[plt_key]
@@ -172,7 +174,7 @@ def plot_RMSE_over_horizon(
     show=False,
     with_str=True,
 ):
-    """Plots RMSE over time steps."""
+    """Plot RMSE over time steps."""
     strstr = ""
     _, ax = plt.subplots(nrows=1, ncols=1, figsize=FIGSIZE)
 
@@ -221,7 +223,7 @@ def plot_RMSE_over_horizon(
 def plot_boxplots(
     input_tuples, plt_path, plt_key="rmse_over_samples", exclude_list=["cv"]
 ):
-    """Plots RMSE over time steps."""
+    """Plot RMSE over time steps."""
     _, ax = plt.subplots(nrows=1, ncols=1, figsize=FIGSIZE)
 
     data = [items[0][plt_key] for items in input_tuples if items[1] not in exclude_list]
@@ -505,10 +507,11 @@ if __name__ == "__main__":
     # must be sorted ascending (ascending quantil)
     # first entry: quantil of error threshhold (between 0 and zero)
     # second entry: Path to trained model
+    # if len of list == 1, i.e. only the default selector is given, it will evaluated seperatly
     sel_model_list = [
         (
             0.8,
-            os.path.join(repo_path, "results", "cr_fusion_08"),
+            os.path.join(repo_path, "results_variation", "cr_fusion_08"),
         ),
         (
             0.85,
@@ -533,11 +536,11 @@ if __name__ == "__main__":
     for base_path_in in [sm[1] for sm in sel_model_list]:
         if os.path.exists(os.path.join(base_path_in, "evaluation_results.pkl")):
             continue
-        eval_main(base_path=base_path_in, debug=False)
+        args_eval = Namespace(debug=False, path=base_path_in)
+        eval_main(args=args_eval)
 
-    update_matplotlib()
-
+    update_matplotlib(fontsize=FONTSIZE)
     visualization_vs_benchmark(args=args)
 
-    update_matplotlib()
+    update_matplotlib(fontsize=FONTSIZE)
     visualization_selectors(sel_model_list=sel_model_list)

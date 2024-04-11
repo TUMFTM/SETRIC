@@ -48,7 +48,7 @@ The directory `setric` contains the code to run the training, optimization and e
 `bayesian_optimization_selector.py` | Bayesian optimization of the selector only
 `bayesian_optimization.py` | Bayesian optimization of the single predictors and the selector
 `evaluate_fusion.py` | Evaluation of the trained FusionModel on the test data for one fixed error threshold
-`evaluate_variation.py` | Evaluation (incl. visualization) of multiple FusionModel with different error thresholds of the selector
+`evaluate_variation.py` | Evaluation (incl. visualization) of multiple FusionModels with different error thresholds of the selector
 `main_fusion.py` | Main file to train the FusionModel
 
 ### Directory: `models`
@@ -91,4 +91,5 @@ Below is an exemplary visualization of the given implementation of SETRIC, the F
 <img src="assets/sample_ZAM_Tjunction-1_21_T-1_all_pred_46_0015.png" alt="Example of SETRIC." width="9900"/>
 
 ## References
-Phillip Karle, Lukas Furtner, and Markus Lienkamp "Self-Evaluation of Trajectory Predictors for Autonomous Driving" (under review)
+Karle, Phillip, Lukas Furtner, and Markus Lienkamp, „Self-Evaluation of Trajectory Predictors for Autonomous
+Driving,“ Electronics, vol. 13, no. 5, 2024, DOI: https://doi.org/10.3390/electronics13050946.

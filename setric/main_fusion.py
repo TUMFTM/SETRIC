@@ -1,3 +1,5 @@
+"""Main function to train fusion model."""
+
 import os
 import sys
 import argparse
@@ -20,9 +22,9 @@ from utils.scheduling import (
 )
 
 
-def main_train_fusion(args, seed_list=[10], split_list=["r_1"], config_update=None):
-    """Main function to train fusion model."""
-    net_config, cfg_train, base_path = get_config(
+def main_train_fusion(args, seed_list=[10], split_list=["cr"], config_update=None):
+    """Train fusion model."""
+    net_config, cfg_train = get_config(
         args=args,
         results_dir_path=os.path.join(repo_path, "results"),
         is_fusion=True,
@@ -47,16 +49,12 @@ def main_train_fusion(args, seed_list=[10], split_list=["r_1"], config_update=No
             iterator = load_net_params(g_fusion, cfg_train)
             ######################################################################################
             # Start Training
-            for n_iter, model_tag in enumerate(iterator):
-                g_fusion.update_model_tag(
-                    n_iter, model_tag, is_iterative=len(iterator) > 1
-                )
+            for model_tag in iterator:
+                g_fusion.update_model_tag(model_tag)
 
-                log_root_path = get_log_root_path(
-                    base_path, cfg_train["split"], g_fusion.tag
-                )
+                log_root_path = get_log_root_path(cfg_train, g_fusion.tag)
 
-                _ = store_current_config(base_path, cfg_train, net_config, args, n_iter)
+                _ = store_current_config(cfg_train, net_config)
 
                 outp = train(
                     model=g_fusion,
@@ -64,12 +62,11 @@ def main_train_fusion(args, seed_list=[10], split_list=["r_1"], config_update=No
                     log_root_path=log_root_path,
                 )
 
-                if model_tag == "g_sel":
-                    best_rmse_val = outp[0]
-                    best_val_correct_selections = outp[1]
+                best_rmse_val = outp[0]
+                best_val_correct_selections = outp[1]
             ######################################################################################
 
-    return best_rmse_val, best_val_correct_selections
+    return best_rmse_val, best_val_correct_selections, log_root_path
 
 
 if __name__ == "__main__":
@@ -78,7 +75,7 @@ if __name__ == "__main__":
         "--model_list",
         type=int,
         default=1,
-        help="0: 'l_lstm', 'dg_lstm'; 1: 'cv', 'l_stm', 'dg_lstm'",
+        help="0: 'l_lstm', 'dg_lstm'; 1: 'cv', 'l_lstm', 'dg_lstm'",
     )
     parser.add_argument("--config", type=str, default="config/train_config.json")
     parser.add_argument("--net_config", type=str, default="config/net_config.json")

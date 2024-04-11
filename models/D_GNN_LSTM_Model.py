@@ -26,14 +26,14 @@ class D_GNN_LSTM_Model(CustomModel):
         lstm_hidden_size=50,
         lstm_num_layers=2,
         output_features=2,
-        scene_images=False,
+        sc_img=False,
     ):
         super(D_GNN_LSTM_Model, self).__init__()
 
         """
-        Model description: The D_GNN_LSTM Model uses a LSTM_Encoder Module to encode the past data information in 
-        LSTM hidden and cell states which are passed to a LSTM_Decoder Module that predicts future trajectories. In 
-        addition to the GNN embedding of the GNN_LSTM Model, Edges are only considered between agents that are within 
+        Model description: The D_GNN_LSTM Model uses a LSTM_Encoder Module to encode the past data information in
+        LSTM hidden and cell states which are passed to a LSTM_Decoder Module that predicts future trajectories. In
+        addition to the GNN embedding of the GNN_LSTM Model, Edges are only considered between agents that are within
         a certain proximity.
         """
 
@@ -69,11 +69,11 @@ class D_GNN_LSTM_Model(CustomModel):
 
         # Encoder hidden state embedder
         self.dyn_emb = torch.nn.Linear(self.lstm_hidden_size, 32)
-        self.Decoder = Indy_Decoder(dyn_embedding_size=32 + 32 * int(scene_images))
+        self.Decoder = Indy_Decoder(dyn_embedding_size=32 + 32 * int(sc_img))
 
-        self.scene_images = scene_images
+        self.sc_img = sc_img
 
-        if self.scene_images:
+        if self.sc_img:
             self.scimg_encoder = SCIMG_Encoder()
 
         self.leaky_relu = torch.nn.LeakyReLU(0.1)
@@ -97,7 +97,7 @@ class D_GNN_LSTM_Model(CustomModel):
         hidden, cell = self.Encoder(x_e)
 
         # Scene Encoding
-        if self.scene_images:
+        if self.sc_img:
             sc_img_enc = self.scimg_encoder(batch.sc_img)
         else:
             sc_img_enc = None
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         lstm_hidden_size=net_config["lstm_hidden_size"],
         lstm_num_layers=net_config["lstm_num_layers"],
         output_features=net_config["output_features"],
-        scene_images=cfg_train["sc_img"],
+        sc_img=cfg_train["sc_img"],
     )
 
     model.to(cfg_train["device"])

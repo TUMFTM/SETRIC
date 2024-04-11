@@ -15,7 +15,7 @@ import numpy as np
 repo_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(repo_path)
 
-from utils.processing import get_edge_index
+from utils.processing import get_edge_index, cr_labels
 from utils.geometry import coord_to_coord
 from utils.map_processing import (
     generate_self_rendered_sc_img,
@@ -60,11 +60,14 @@ class Dataset_CR(InMemoryDataset):
             self.processed_file_folder += "_debug"
             print("Running on debug data")
 
+        # Needs to be found in order to skip the processing
         self.processed_file_name = "CR" + "_" + self.split_type + ".pt"
 
-        train_scenario_file, val_scenario_file, test_scenario_file = create_split_files(
-            self.processed_file_folder,
-        )
+        (
+            train_scenario_file,
+            val_scenario_file,
+            test_scenario_file,
+        ) = create_split_files(self.processed_file_folder)
 
         """  Get split definition """
         if self.split_type == "train":
@@ -107,11 +110,14 @@ class Dataset_CR(InMemoryDataset):
             Y = Future y positions relative to the current y position
             ANGLE = Future bounding box angle relative to the current bounding box angle
 
-        The edges (data.edge_index) are constructed from every agent to every other agent within the scene without self-loops
+        The edges (data.edge_index) are constructed from every agent to every other agent
+        within the scene without self-loops
         Note: scene = scenario = all data within one drone flight
         """
         if self.debug:
             data_list = []
+            iter_debug = 0
+            max_iter_debug = 1
             for file_name in tqdm(self.scenario_list):
                 """calculate datalist from all scenarios in scenario_list"""
                 scenario_data_list = process_scenario(
@@ -124,11 +130,14 @@ class Dataset_CR(InMemoryDataset):
                 )
                 if len(scenario_data_list) == 0:
                     continue
-                elif len(scenario_data_list) > 0 and self.debug:
-                    idx_min = get_debug_idx(scenario_data_list)
-                    data_list.append(scenario_data_list[:idx_min])
-                    break
+
                 data_list.append(scenario_data_list)
+
+                iter_debug += 1
+                print("iter_debug = {}".format(iter_debug))
+                if iter_debug == max_iter_debug:
+                    break
+
         else:
             n_files = len(self.scenario_list)
             p_iter = iter(
@@ -178,7 +187,7 @@ def get_debug_idx(scenario_data_list):
     return [
         j
         for j in range(len(scenario_data_list))
-        if sum([sc.x.shape[0] for sc in scenario_data_list[:j]]) > 16
+        if sum([sc.x.shape[0] for sc in scenario_data_list[:j]]) > 50
     ][0]
 
 
@@ -202,8 +211,18 @@ def get_trajectories_list(scenario):
             )
         ]
         for i in range(0, len(scenario.dynamic_obstacles))
-        if "_trajectory" in scenario.dynamic_obstacles[i].prediction.__dict__.keys()
+        if scenario.dynamic_obstacles[i].prediction is not None
+        and "_trajectory" in scenario.dynamic_obstacles[i].prediction.__dict__.keys()
     ]
+
+
+def get_concat_scenario_id(scenario_id, obstacle_id, current_time_step, t_start):
+    return (
+        str(scenario_id)
+        + "_obj_id_{:d}".format(obstacle_id)
+        + "_t0_{:d}".format(current_time_step)
+        + "_th_{:d}".format(t_start)
+    )
 
 
 def process_scenario(
@@ -213,6 +232,7 @@ def process_scenario(
     watch_radius,
     min_len_t_hist,
     sliwi_size,
+    with_timing=False,
 ):
     """function to process one scenario/commonroad file"""
 
@@ -222,19 +242,34 @@ def process_scenario(
     # get scenario
     try:
         scenario, _ = cr_file_.open()
-    except:
-        print("{} not found".format(file_name))
+    except Exception as e:
+        print("{} not processed, Error: {}".format(file_name, e))
         return []
+    
+    if with_timing:
+        t_list = []
+        n_steps = 0
+        t0 = datetime.datetime.now()
 
     # get benchmark id
     _ = add_scenario_id(cr_file_, scenario)
+    
+    if with_timing:
+        t1 = datetime.datetime.now()
+        t_list.append(t1 - t0)
 
     # get list of all trajectory in scenario
     trajectories_list = get_trajectories_list(scenario)
 
     if len(trajectories_list) == 0:
-        print("{} too short".format(file_name))
+        print("{} too short, trajectories_list".format(file_name))
+        if with_timing:
+            return [],  (t_list, n_steps)
         return []
+
+    if with_timing:
+        t2 = datetime.datetime.now()
+        t_list.append(t2 - t1)
 
     # get total number of timesteps in scenario
     timesteps_in_scenario = max([len(tj) for tj in trajectories_list])
@@ -250,6 +285,9 @@ def process_scenario(
     ):
         t_min = max(0, current_time_step - pp + 1)
         scene_id_list = []
+
+        if with_timing:
+            n_steps += 1
 
         for n_iter, t_start in enumerate(
             range(t_min, current_time_step - min_len_t_hist + 2)
@@ -441,7 +479,11 @@ def process_scenario(
                 x_p_l_list.append(torch.tensor(x_p_l_dummy, dtype=torch.float))
                 x_p_t_list.append(torch.tensor(x_p_t_dummy, dtype=torch.float))
                 x_angle_list.append(torch.tensor(x_angle_dummy, dtype=torch.float))
-                x_class_list.append(torch.tensor([0], dtype=torch.float))
+                x_class_list.append(
+                    torch.tensor(
+                        [cr_labels(objid.obstacle_type.name)], dtype=torch.float
+                    )
+                )
                 y_p_l_list.append(torch.tensor(y_p_l_dummy, dtype=torch.float))
                 y_p_t_list.append(torch.tensor(y_p_t_dummy, dtype=torch.float))
                 y_angle_list.append(torch.tensor(y_angle_dummy, dtype=torch.float))
@@ -466,8 +508,12 @@ def process_scenario(
                     )
                 )
                 scenario_id_list.append(
-                    str(scenario.scenario_id)
-                    + "_{:08d}".format(id_dict[objid._obstacle_id])
+                    get_concat_scenario_id(
+                        scenario.scenario_id,
+                        objid._obstacle_id,
+                        current_time_step,
+                        t_start,
+                    )
                 )
 
             # convert node feature lists to tensors
@@ -532,7 +578,12 @@ def process_scenario(
     scenario_data_list = list(filter(None, scenario_data_list))
 
     if len(scenario_data_list) == 0:
-        print("{} too short".format(file_name))
+        print("{} too short, scenario_data_list".format(file_name))
+
+    if with_timing:
+        t3 = datetime.datetime.now()
+        t_list.append(t3 - t2)
+        return scenario_data_list, (t_list, n_steps)
 
     return scenario_data_list
 
@@ -572,15 +623,18 @@ def create_split_files(processed_file_folder, train_ratio=0.8, val_ratio=0.1):
         "split_definition" + "_test.txt",
     )
 
+    # Create splits
+    split_train = int(train_ratio * len(scenario_names_list))
+    split_val = int((train_ratio + val_ratio) * len(scenario_names_list))
+    split_test_start = split_val
+
+    # Create scenario files for training and validation
     if not os.path.exists(train_scenarios_file):
         if not os.path.exists(os.path.dirname(train_scenarios_file)):
             os.mkdir(os.path.dirname(train_scenarios_file))
 
-        split_1 = int(train_ratio * len(scenario_names_list))
-        split_2 = int((train_ratio + val_ratio) * len(scenario_names_list))
-        train_filenames = scenario_names_list[:split_1]
-        val_filenames = scenario_names_list[split_1:split_2]
-        test_filenames = scenario_names_list[split_2:]
+        train_filenames = scenario_names_list[:split_train]
+        val_filenames = scenario_names_list[split_train:split_val]
 
         # Open the file in write mode
         with open(train_scenarios_file, "w") as file:
@@ -593,12 +647,19 @@ def create_split_files(processed_file_folder, train_ratio=0.8, val_ratio=0.1):
             for scenario in val_filenames:
                 file.write(scenario + "\n")
 
+    # scenario file for test
+    if not os.path.exists(test_scenarios_file):
+        test_filenames = scenario_names_list[split_test_start:]
         with open(test_scenarios_file, "w") as file:
             # Iterate over the strings and write them line by line
             for scenario in test_filenames:
                 file.write(scenario + "\n")
 
-    return train_scenarios_file, val_scenarios_file, test_scenarios_file
+    return (
+        train_scenarios_file,
+        val_scenarios_file,
+        test_scenarios_file,
+    )
 
 
 def get_scenario(
@@ -609,8 +670,8 @@ def get_scenario(
     filename = os.path.join(scenario_path, xml_file)
     try:
         scenario, _ = CommonRoadFileReader(filename).open()
-    except:
-        print("Scenario does not work: {}".format(filename))
+    except Exception as e:
+        print("{} not opened, Error: {}".format(filename, e))
         scenario = None
     if with_traj_list:
         if scenario is None:
@@ -619,7 +680,8 @@ def get_scenario(
             try:
                 trajectories_list = get_future_states(scenario)
                 timesteps_in_scenario = max([len(tj) for tj in trajectories_list])
-            except:
+            except Exception as err:
+                print("No futures states, error: {}".format(err))
                 return None, None, None
 
         return scenario, trajectories_list, timesteps_in_scenario
@@ -704,6 +766,7 @@ if __name__ == "__main__":
 
     debug = False
     split_type_list = ["train", "val", "test"]
+
     # count_object_per_scenario(split_type_list=split_type_list, scenario_path="data/raw/commonroad-scenarios")
 
     for split_type in split_type_list:
@@ -711,7 +774,7 @@ if __name__ == "__main__":
         time_test_dataloader_start = datetime.datetime.now()
 
         dataset = Dataset_CR(split_type=split_type, debug=debug)
-        dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
         print(
             "Completed after (Hours:Minutes:Seconds:Microseconds): "
@@ -719,3 +782,5 @@ if __name__ == "__main__":
         )
 
         print_datastats(dataloader, split_type)
+
+        # print(next(iter(dataloader)).obj_class)
