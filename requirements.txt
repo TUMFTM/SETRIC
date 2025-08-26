@@ -1,5 +1,5 @@
 pip==23.2.1
-setuptools==68.1.2
+setuptools==78.1.1
 wheel==0.41.2
 
 black==23.3.0
